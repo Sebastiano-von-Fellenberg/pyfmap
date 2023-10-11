@@ -1,17 +1,17 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import ehtim as eh
-
+import time 
 
 import sys
 from PyQt5.QtCore import pyqtSignal
 
-from PyQt5.QtWidgets import QApplication, QMainWindow, QHBoxLayout, QVBoxLayout, QWidget, QLineEdit, QPushButton
+from PyQt5.QtWidgets import QApplication, QMainWindow, QHBoxLayout, QVBoxLayout, QWidget, QLineEdit, QPushButton,QCheckBox
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.widgets import RectangleSelector
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
-
+import pandas as pd
 
 def load_ehtim(filename):
     obs = eh.obsdata.load_uvfits(filename)
@@ -23,6 +23,11 @@ def get_baseline(obsdata, t1, t2):
     vis = obsdata.unpack_bl(t1, t2, "phase", debias=False)
     return amp, vis
     
+def find_nearest_idx(array, value):
+    """Find the index of the nearest value in the array."""
+    array = np.asarray(array)
+    idx = (np.abs(array - value)).argmin()
+    return idx 
 
 
 class MatplotlibWidget(QWidget):
@@ -30,7 +35,6 @@ class MatplotlibWidget(QWidget):
         super().__init__(parent)
         
         self.mainwindow = mainwindow
-        
         
         # Create a Figure and an Axes
         self.figure = Figure()
@@ -55,139 +59,124 @@ class MatplotlibWidget(QWidget):
             # Redraw the canvas
             self.canvas.draw()
         else:
+            self.rs1_list = []
+            self.rs2_list = []
+            self.data_list = data_list
             if plottype == 'phase-amp':
-                ax1 = self.figure.add_subplot(111)
-                if scopes_names is not None:
-                    ax1.set_title(scopes_names[0]+'-'+scopes_names[1])
-                for n in range(len(data_list)):
-                    ax1.plot(data_list[n]["phase"]['time'], data_list[n]["phase"]['phase'], ".")
-                ax1.set_xlabel('Time [UT]')
-                ax1.set_ylabel('Amp [Jy]')
-                #ax1.set_xlim((np.nanmin(data_list[0]['time']), np.nanmax(data_list[0]['time'])))
-                #ax1.set_ylim((np.nanmin(data_list[0]['amp']), np.nanmax(data_list[0]['amp'])))
-                            
-                ax2 = self.figure.add_subplot(211)
-                for n in range(len(data_list)):
-                    ax2.plot(data_list[n]["amp"]['time'], data_list[n]["amp"]['amp'], ".")
-                ax2.set_xlabel('Time [UT]')
-                ax2.set_ylabel('Phase [deg]')
-                #ax2.set_xlim((np.nanmin(data_list[0]['time']), np.nanmax(data_list[0]['time'])))
-                #ax2.set_ylim((-180, 180))
-                
-                self.selection_active = False
-                self.rs1 = RectangleSelector(
-                    ax1, self.on_rectangle_select, drawtype='box',
-                    rectprops=dict(facecolor='blue', edgecolor='black', alpha=0.5, fill=True)
-                )
-                self.rs1.set_active(False)  # Initially inactive
-
-                self.rs2 = RectangleSelector(
-                    ax2, self.on_rectangle_select, drawtype='box',
-                    rectprops=dict(facecolor='blue', edgecolor='black', alpha=0.5, fill=True)
-                )
-                self.rs2.set_active(False)  # Initially inactive
-                
-                self.canvas.draw()
+                print("not implemented")
             elif plottype == 'amp':
-                ax1 = self.figure.add_subplot(111)
+                self.fig, self.axes = plt.subplots(len(data_list), 1, sharex=True, gridspec_kw={"hspace":0})
+                if len(data_list) == 1:
+                    self.axes = [self.axes]
                 if scopes_names is not None:
-                    ax1.set_title(scopes_names[0]+'-'+scopes_names[1])
+                    self.axes[0].set_title(scopes_names[0]+'-'+scopes_names[1])
+                    
                 for n in range(len(data_list)):
-                    ax1.plot(data_list[n]["phase"]['time'], data_list[n]["phase"]['phase'], ".")
-                ax1.set_xlabel('Time [UT]')
-                ax1.set_ylabel('Amp [Jy]')
-                #ax1.set_xlim((np.nanmin(data_list[0]['time']), np.nanmax(data_list[0]['time'])))
-                #ax1.set_ylim((np.nanmin(data_list[0]['amp']), np.nanmax(data_list[0]['amp'])))
-            
-                
-                # Enable rectangle selector
-                self.selection_active = False
-                self.rs1 = RectangleSelector(
-                    ax1, self.on_rectangle_select, drawtype='box',
-                    rectprops=dict(facecolor='blue', edgecolor='black', alpha=0.5, fill=True)
-                )
-                self.rs1.set_active(False)  # Initially inactive
-                
-                # Enable rectangle selector
-                self.rs2 = None 
-                
+                    
+                    self.axes[n].plot(data_list[n]["phase"]['time'], data_list[n]["amp"]['amp'], ".", zorder=0)
+                    self.axes[n].set_ylabel('Amp [Jy]')
+                    self.axes[n].set_ylim((np.nanmin(data_list[n]["amp"]['amp']), np.nanmax(data_list[n]["amp"]['amp'])))
+                        
+                    # Enable rectangle selector
+                    self.selection_active = False
+                    rs = RectangleSelector(self.axes[n], self.on_rectangle_select, drawtype='box',
+                                           rectprops=dict(facecolor='blue', edgecolor='black', alpha=0.5, fill=True, zorder=100) # unforentuaelty the rectangle is not show in this latest version, so I am expliclity drawing on in the on_rectangle_select function
+                                                           )
+                    rs.set_active(False)
+                    self.rs1_list.append(rs)
+                    
+                      # Initially inactive
+                    
+                    # Enable rectangle selector
+                    self.rs2_list.append(None)
+                self.axes[len(data_list)-1].set_xlabel('Time [UT]')
+                self.canvas.figure = self.fig
+                self.toolbar = NavigationToolbar(self.canvas, self)
                 self.canvas.draw()
             else:
-                ax2 = self.figure.add_subplot(111)
-                for n in range(len(data_list)):
-                    ax2.plot(data_list[n]["phase"]['time'], data_list[n]["phase"]['phase'], ".")      
-                ax2.set_xlabel('Time [UT]')
-                ax2.set_ylabel('Phase [deg]')
-                #ax2.set_xlim((np.nanmin(data_list[0]['time']), np.nanmax(data_list[0]['time'])))
-                #ax2.set_ylim((-180, 180))
-                
-                # Enable rectangle selector
-                self.selection_active = False
-                self.rs1 = None 
-                
-                # Enable rectangle selector
-                self.rs2 = RectangleSelector(
-                    ax2, self.on_rectangle_select, drawtype='box',
-                    rectprops=dict(facecolor='blue', edgecolor='black', alpha=0.5, fill=True)
-                )
-                self.rs2.set_active(False)  # Initially inactive
+                print("Not implemented yet")
         
-    def update_plot(self, obsdata, selected_scopes):
+    def update_plot(self, obsdata, selected_scopes, plottype='amp'):
         # Clear the previous plot and plot new data
         if len(selected_scopes)  == 2:
             amp, phi = get_baseline(obsdata, selected_scopes[0], selected_scopes[1])
-            self.plot_data(data_list=[{"amp":amp, "phase":phi}], scopes_names=(selected_scopes[0], selected_scopes[1]))
+            self.plot_data(data_list=[{"amp":amp, "phase":phi}], scopes_names=(selected_scopes[0], selected_scopes[1]), plottype=plottype)
         else:
-            data_list = [{"amp":selected_scopes[0], "phase":selected_scopes[n]} for n in range(1, len(selected_scopes))]
+            data_list, scope_names = [], []
+            for n in range(1, len(selected_scopes)):
+
+                amp, phi = get_baseline(obsdata, selected_scopes[0], selected_scopes[n])
+                data_list.append({"amp":amp, "phase":phi})
+                scope_names.append((selected_scopes[0], selected_scopes[n]))
+            self.plot_data(data_list=data_list, scopes_names=None, plottype=plottype)
             
-            
-        
+
     def on_rectangle_select(self, eclick, erelease):
         if self.selection_active:
-            try:
-                # Get the coordinates of the selected rectangle
-                xmin, xmax = min(eclick.xdata, erelease.xdata), max(eclick.xdata, erelease.xdata)
-                ymin, ymax = min(eclick.ydata, erelease.ydata), max(eclick.ydata, erelease.ydata)
-
-                # Get data points within the selected rectangle
-                x_data, y_data = self.rs1.get_verts().T
-                mask = (x_data >= xmin) & (x_data <= xmax) & (y_data >= ymin) & (y_data <= ymax)
-                selected_x = x_data[mask]
-                selected_y = y_data[mask]
-
-                # Print the selected data points
-                print("Selected data points:")
-                for x, y in zip(selected_x, selected_y):
-                    print(f"x: {x}, y: {y}")
-            except:
-                print("Not selected amp data")
-        
-            try:
-                # Get the coordinates of the selected rectangle
-                xmin, xmax = min(eclick.xdata, erelease.xdata), max(eclick.xdata, erelease.xdata)
-                ymin, ymax = min(eclick.ydata, erelease.ydata), max(eclick.ydata, erelease.ydata)
-
-                # Get data points within the selected rectangle
-                x_data, y_data = self.rs2.get_verts().T
-                mask = (x_data >= xmin) & (x_data <= xmax) & (y_data >= ymin) & (y_data <= ymax)
-                selected_x = x_data[mask]
-                selected_y = y_data[mask]
-
-                # Print the selected data points
-                print("Selected data points:")
-                for x, y in zip(selected_x, selected_y):
-                    print(f"x: {x}, y: {y}")
-            except:
-                print("Not selected phase data")
+            for n, ax in enumerate(self.axes):
+                if eclick.inaxes == ax:
+                    num = n
+                for patch in ax.patches:
+                    patch.remove()
+                
+            flagged_telescope = self.mainwindow.scopes_names[num]
             
+            # Get the coordinates of the selected rectangle
+            xmin, xmax = min(eclick.xdata, erelease.xdata), max(eclick.xdata, erelease.xdata)
+            ymin, ymax = min(eclick.ydata, erelease.ydata), max(eclick.ydata, erelease.ydata) 
+            
+            
+            # Get data points within the selected rectangle
+            
+            x_data = self.data_list[num]["phase"]['time']
+            y_data = self.data_list[num]["amp"]['amp']
 
+            rect = plt.Rectangle((xmin, ymin), xmax - xmin, ymax - ymin, fill=True, facecolor='xkcd:light blue', edgecolor='xkcd:light blue', linewidth=2, alpha=0.2)
+            self.axes[num].add_patch(rect)
+
+            mask = (x_data >= xmin) & (x_data <= xmax) & (y_data >= ymin) & (y_data <= ymax)
+            selected_x = x_data[mask]
+            selected_y = y_data[mask]
+            
+            sorted_xdata = np.sort(x_data)
+            flag_starttime = []
+            flag_stoptime = []
+
+            for x in zip(selected_x):
+                idx = find_nearest_idx(sorted_xdata, x)
+                if idx > 1: 
+                    ts = sorted_xdata[idx] - (sorted_xdata[idx] - sorted_xdata[idx-1])/2
+                else:
+                    ts = sorted_xdata[0]
+                
+                if idx < len(sorted_xdata):
+                    te = sorted_xdata[idx] + (sorted_xdata[idx+1] - sorted_xdata[idx])/2
+                else:
+                    te = sorted_xdata[-1]
+                flag_starttime.append(ts[0])
+                flag_stoptime.append(te[0])
+            
+            print(flag_starttime)
+            df = pd.DataFrame({"telescope1":np.repeat(flagged_telescope, len(flag_starttime)), 
+                               "telescope2":np.repeat("None", len(flag_starttime)),
+                               "starttime":flag_starttime,  
+                               "endtime":flag_stoptime})
+            self.mainwindow.flagfile = pd.concat([self.mainwindow.flagfile, df], axis=0, ignore_index=True)
+            
+            print(self.mainwindow.flagfile)
+                
+                
+        ## WARNING Currently nothing implemented for phase flagging
+        
+        self.canvas.draw()
+        
 class MatplotlibWidget2(QWidget):
     def __init__(self, mainwindow, parent=None):
         super().__init__(parent)
         
         self.mainwindow = mainwindow
         
-        
+        self.lastclick = time.time()
         # Create a Figure and an Axes
         self.figure = Figure(figsize=(5,5))
         self.canvas = FigureCanvas(self.figure)
@@ -199,16 +188,22 @@ class MatplotlibWidget2(QWidget):
         # Create a NavigationToolbar
         self.toolbar = NavigationToolbar(self.canvas, self)
 
+        # Create checkboxes for options
+
+        
+        
         # Create a QVBoxLayout to hold the Matplotlib widget and the toolbar
         layout = QVBoxLayout()
         layout.addWidget(self.canvas)
         layout.addWidget(self.toolbar)
         self.setLayout(layout)
-
+        
+        
         # Plot some data
-        self.plot_data()
+        self.plot_telescopes()
+        
 
-    def plot_data(self, obs=None):
+    def plot_telescopes(self, obs=None, draw=True):
         if obs is None:
             # Clear the previous plot and plot new data
             self.figure.clear()
@@ -232,8 +227,11 @@ class MatplotlibWidget2(QWidget):
             ax.set_xlim((-2, 12))
             ax.set_ylim((-2, 12))
             
-            # Redraw the canvas
-            self.canvas.draw()
+            if draw:
+                # Redraw the canvas
+                self.canvas.draw()
+            else:
+                return ax
 
     def on_click(self, event):
         if event.inaxes:
@@ -242,7 +240,6 @@ class MatplotlibWidget2(QWidget):
             if event.button == 1:
                 distance = np.sqrt((x-self.positions[0])**2 + (y-self.positions[1])**2) 
                 if np.min(distance) < 0.5:
-                    print(self.scopes_names)
                     self.clicked_points.append((self.positions[0, np.argmin(distance)], 
                                                 self.positions[1, np.argmin(distance)]))
                     
@@ -254,10 +251,11 @@ class MatplotlibWidget2(QWidget):
                     for num, s in enumerate(self.scopes):
                         ax.plot(self.positions[0, num], self.positions[1, num], "o", ms=5, color="k")
                         ax.annotate(s, xy=(self.positions[0, num], self.positions[1, num]), color="k")
-                    
                     if self.clicked_points:
                         x_points, y_points = zip(*self.clicked_points)
-                        ax.scatter(x_points, y_points, color='red', label='Selected Points')
+                        ax.scatter(x_points, y_points, color='red', label='Selected Points', zorder=5)
+                        for xx, yy in zip(x_points, y_points):
+                            ax.plot([x_points[0], xx], [y_points[0], yy], "-", color="k")
 
                     ax.set_xlim((-2, 12))
                     ax.set_ylim((-2, 12))
@@ -266,6 +264,9 @@ class MatplotlibWidget2(QWidget):
                     self.canvas.draw()
                     if len(self.clicked_scopes) == 2:
                         self.mainwindow.matplotlib_widget.update_plot(self.mainwindow.obsdata, self.clicked_scopes)
+                    elif len(self.clicked_scopes) > 2:
+                        self.mainwindow.matplotlib_widget.update_plot(self.mainwindow.obsdata, self.clicked_scopes)
+                        
                     
             if event.button == 3:
                 self.clicked_points  = []
@@ -276,6 +277,7 @@ class MatplotlibWidget2(QWidget):
                 for num, s in enumerate(self.scopes):
                     ax.plot(self.positions[0, num], self.positions[1, num], "o", ms=5, color="k")
                     ax.annotate(s, xy=(self.positions[0, num], self.positions[1, num]), color="k")
+
                     
                 ax.set_xlim((-2, 12))
                 ax.set_ylim((-2, 12))
@@ -305,8 +307,16 @@ class MainWindow(QMainWindow):
         
         # Create a QLineEdit for entering a string
         self.input_text = QLineEdit(self)
-        self.input_text.setPlaceholderText('Filename')
+        #self.input_text.setPlaceholderText('/aux/vcompute2a/sfellenberg/workspace/RXJ1301/reduce4/RXJ1301.9+27_calibrated.uvf')
+        self.input_text.setText('/aux/vcompute2a/sfellenberg/workspace/RXJ1301/reduce4/RXJ1301.9+27_calibrated.uvf')
         self.input_text.returnPressed.connect(self.plot_with_text)
+        
+        self.flagfile = pd.DataFrame()
+        self.flagfile["telescope1"] = pd.Series([], dtype=str)
+        self.flagfile["telescope2"] = pd.Series([], dtype=str)
+        self.flagfile["starttime"]  = pd.Series([], dtype=float)
+        self.flagfile["endtime"]    = pd.Series([], dtype=float)
+        
         
         # Create a MatplotlibWidget instance and set it as the central widget
         self.matplotlib_widget = MatplotlibWidget(self)
@@ -356,9 +366,12 @@ class MainWindow(QMainWindow):
     def trigger_load_ehtim(self):
         text = self.input_text.text()
         self.obsdata = load_ehtim(text)
-        amp, phi = get_baseline(self.obsdata, "EB", "LA")
-        self.matplotlib_widget.plot_data(data_list=[{"amp":amp, "phase":phi}])
-        self.matplotlib_widget2.plot_data(obs=self.obsdata)
+        self.scopes = self.obsdata.tkey
+        self.scopes_names = np.array(list(self.obsdata.tkey.keys()))
+        amp, phi = get_baseline(self.obsdata, self.scopes_names[0], self.scopes_names[1], )
+        self.matplotlib_widget.plot_data(data_list=[{"amp":amp, "phase":phi}], plottype='amp')
+        self.matplotlib_widget2.plot_telescopes(obs=self.obsdata)
+        
         
     def plot_with_text(self):
         text = self.input_text.text()
@@ -366,8 +379,16 @@ class MainWindow(QMainWindow):
 
     def toggle_rectangle_selection(self):
         self.matplotlib_widget.selection_active = not self.matplotlib_widget.selection_active
-        self.matplotlib_widget.rs1.set_active(self.matplotlib_widget.selection_active)
-        self.matplotlib_widget.rs2.set_active(self.matplotlib_widget.selection_active)
+    
+        for n in range(len(self.matplotlib_widget.rs1_list)):
+            if self.matplotlib_widget.rs1_list is not None:
+                print("setting active!")
+                self.matplotlib_widget.rs1_list[n].set_active(self.matplotlib_widget.selection_active)
+        
+        for n in range(len(self.matplotlib_widget.rs2_list)):
+            if self.matplotlib_widget.rs2_list[n] is not None:
+                print("setting active!")
+                self.matplotlib_widget.rs2_list[n].set_active(self.matplotlib_widget.selection_active)
 
         if self.matplotlib_widget.selection_active:
             print("Rectangle selection mode active. Select a rectangle on the plot.")
