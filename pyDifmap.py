@@ -59,7 +59,8 @@ class MatplotlibWidget(QWidget):
             # Redraw the canvas
             self.canvas.draw()
         else:
-            self.rs1_list = []
+            self.rs_flag = []
+            self.rs_unflag = []
             self.rs2_list = []
             self.data_list = data_list
             if plottype == 'phase-amp':
@@ -78,13 +79,21 @@ class MatplotlibWidget(QWidget):
                     self.axes[n].set_ylim((np.nanmin(data_list[n]["amp"]['amp']), np.nanmax(data_list[n]["amp"]['amp'])))
                         
                     # Enable rectangle selector
-                    self.selection_active = False
-                    rs = RectangleSelector(self.axes[n], self.on_rectangle_select, drawtype='box',
-                                           rectprops=dict(facecolor='blue', edgecolor='black', alpha=0.5, fill=True, zorder=100) # unforentuaelty the rectangle is not show in this latest version, so I am expliclity drawing on in the on_rectangle_select function
-                                                           )
-                    rs.set_active(False)
-                    self.rs1_list.append(rs)
+                    self.flagselection_active = False
+                    rs_flag = RectangleSelector(self.axes[n], self.on_flags_select)
+                                           # unforentuaelty the rectangle is not show in this latest version, so I am expliclity drawing on in the on_flags_select function
+
+                    rs_flag.set_active(False)
                     
+
+                    self.rs_flag.append(rs_flag)
+                    
+                    self.unflagselection_active = False
+                    rs_unflag = RectangleSelector(self.axes[n], self.on_unflags_select)
+                                           # unforentuaelty the rectangle is not show in this latest version, so I am expliclity drawing on in the on_flags_select function
+
+                    rs_unflag.set_active(False)                    
+                    self.rs_unflag.append(rs_unflag)
                       # Initially inactive
                     
                     # Enable rectangle selector
@@ -111,8 +120,8 @@ class MatplotlibWidget(QWidget):
             self.plot_data(data_list=data_list, scopes_names=None, plottype=plottype)
             
 
-    def on_rectangle_select(self, eclick, erelease):
-        if self.selection_active:
+    def on_flags_select(self, eclick, erelease):
+        if self.flagselection_active:
             for n, ax in enumerate(self.axes):
                 if eclick.inaxes == ax:
                     num = n
@@ -133,11 +142,11 @@ class MatplotlibWidget(QWidget):
 
             rect = plt.Rectangle((xmin, ymin), xmax - xmin, ymax - ymin, fill=True, facecolor='xkcd:light blue', edgecolor='xkcd:light blue', linewidth=2, alpha=0.2)
             self.axes[num].add_patch(rect)
-
+            
             mask = (x_data >= xmin) & (x_data <= xmax) & (y_data >= ymin) & (y_data <= ymax)
             selected_x = x_data[mask]
             selected_y = y_data[mask]
-            
+            self.axes[num].plot(selected_x, selected_y, 'x', color='xkcd:dark red')
             sorted_xdata = np.sort(x_data)
             flag_starttime = []
             flag_stoptime = []
@@ -156,13 +165,13 @@ class MatplotlibWidget(QWidget):
                 flag_starttime.append(ts[0])
                 flag_stoptime.append(te[0])
             
-            print(flag_starttime)
+            
             df = pd.DataFrame({"telescope1":np.repeat(flagged_telescope, len(flag_starttime)), 
                                "telescope2":np.repeat("None", len(flag_starttime)),
                                "starttime":flag_starttime,  
                                "endtime":flag_stoptime})
             self.mainwindow.flagfile = pd.concat([self.mainwindow.flagfile, df], axis=0, ignore_index=True)
-            
+            self.mainwindow.flagfile = self.mainwindow.flagfile.drop_duplicates()
             print(self.mainwindow.flagfile)
                 
                 
@@ -170,6 +179,67 @@ class MatplotlibWidget(QWidget):
         
         self.canvas.draw()
         
+        
+    def on_unflags_select(self, eclick, erelease):
+        if self.unflagselection_active:
+            for n, ax in enumerate(self.axes):
+                if eclick.inaxes == ax:
+                    num = n
+                for patch in ax.patches:
+                    patch.remove()
+                
+            unflagged_telescope = self.mainwindow.scopes_names[num]
+            
+            # Get the coordinates of the selected rectangle
+            xmin, xmax = min(eclick.xdata, erelease.xdata), max(eclick.xdata, erelease.xdata)
+            ymin, ymax = min(eclick.ydata, erelease.ydata), max(eclick.ydata, erelease.ydata) 
+            
+            
+            # Get data points within the selected rectangle
+            
+            x_data = self.data_list[num]["phase"]['time']
+            y_data = self.data_list[num]["amp"]['amp']
+
+            rect = plt.Rectangle((xmin, ymin), xmax - xmin, ymax - ymin, fill=True, facecolor='xkcd:light green', edgecolor='xkcd:light green', linewidth=2, alpha=0.2)
+            self.axes[num].add_patch(rect)
+            
+            
+
+            mask = (x_data >= xmin) & (x_data <= xmax) & (y_data >= ymin) & (y_data <= ymax)
+            selected_x = x_data[mask]
+            selected_y = y_data[mask]
+            
+            sorted_xdata = np.sort(x_data)
+            unflag_starttime = []
+            unflag_stoptime = []
+
+            for x in zip(selected_x):
+                idx = find_nearest_idx(sorted_xdata, x)
+                if idx > 1: 
+                    ts = sorted_xdata[idx] - (sorted_xdata[idx] - sorted_xdata[idx-1])/2
+                else:
+                    ts = sorted_xdata[0]
+                
+                if idx < len(sorted_xdata):
+                    te = sorted_xdata[idx] + (sorted_xdata[idx+1] - sorted_xdata[idx])/2
+                else:
+                    te = sorted_xdata[-1]
+                unflag_starttime.append(ts[0])
+                unflag_stoptime.append(te[0])
+            
+            
+            df = pd.DataFrame({"telescope1":np.repeat(unflagged_telescope, len(unflag_starttime)), 
+                               "telescope2":np.repeat("None", len(unflag_starttime)),
+                               "starttime":unflag_starttime,  
+                               "endtime":unflag_stoptime})
+
+            print('unflagging following dat')
+                
+        ## WARNING Currently nothing implemented for phase flagging
+        
+        self.canvas.draw()
+
+
 class MatplotlibWidget2(QWidget):
     def __init__(self, mainwindow, parent=None):
         super().__init__(parent)
@@ -295,8 +365,16 @@ class ButtonWidget(QWidget):
 
         # Arrange the buttons in a horizontal layout
         layout = QHBoxLayout()
+        
+        self.checkbox_stationflag  = QCheckBox("Station Flag", self)
+        self.checkbox_baselineflag = QCheckBox("Baseline Flag", self)
+
         layout.addWidget(self.button1)
         layout.addWidget(self.button2)
+        layout.addWidget(self.checkbox_stationflag)
+        layout.addWidget(self.checkbox_baselineflag)
+        
+
         self.setLayout(layout)
         
         #/aux/vcompute2a/sfellenberg/workspace/RXJ1301/reduce4/RXJ1301.9+27_calibrated.uvf
@@ -308,7 +386,8 @@ class MainWindow(QMainWindow):
         # Create a QLineEdit for entering a string
         self.input_text = QLineEdit(self)
         #self.input_text.setPlaceholderText('/aux/vcompute2a/sfellenberg/workspace/RXJ1301/reduce4/RXJ1301.9+27_calibrated.uvf')
-        self.input_text.setText('/aux/vcompute2a/sfellenberg/workspace/RXJ1301/reduce4/RXJ1301.9+27_calibrated.uvf')
+        #self.input_text.setText('/aux/vcompute2a/sfellenberg/workspace/RXJ1301/reduce4/RXJ1301.9+27_calibrated.uvf')
+        self.input_text.setText('/home/sebastiano/Documents/PythonScripts/RXJ1301.9+27_calibrated.uvf')
         self.input_text.returnPressed.connect(self.plot_with_text)
         
         self.flagfile = pd.DataFrame()
@@ -331,8 +410,8 @@ class MainWindow(QMainWindow):
     
         # Create a ButtonWidget instance
         self.button_widget = ButtonWidget(self)
-        self.button_widget.button1.clicked.connect(self.toggle_rectangle_selection)
-
+        self.button_widget.button1.clicked.connect(self.toggle_rectangle_flagselection)
+        self.button_widget.button2.clicked.connect(self.toggle_rectangle_unflagselection)
 
         # Arrange the widgets in a layout
         button_layout = QHBoxLayout()
@@ -377,24 +456,40 @@ class MainWindow(QMainWindow):
         text = self.input_text.text()
         self.matplotlib_widget.plot_data(text)
 
-    def toggle_rectangle_selection(self):
-        self.matplotlib_widget.selection_active = not self.matplotlib_widget.selection_active
+    def toggle_rectangle_flagselection(self):
+        self.matplotlib_widget.flagselection_active = not self.matplotlib_widget.flagselection_active
     
-        for n in range(len(self.matplotlib_widget.rs1_list)):
-            if self.matplotlib_widget.rs1_list is not None:
-                print("setting active!")
-                self.matplotlib_widget.rs1_list[n].set_active(self.matplotlib_widget.selection_active)
+        for n in range(len(self.matplotlib_widget.rs_flag)):
+            if self.matplotlib_widget.rs_flag is not None:
+                self.matplotlib_widget.rs_flag[n].set_active(self.matplotlib_widget.flagselection_active)
         
         for n in range(len(self.matplotlib_widget.rs2_list)):
             if self.matplotlib_widget.rs2_list[n] is not None:
-                print("setting active!")
-                self.matplotlib_widget.rs2_list[n].set_active(self.matplotlib_widget.selection_active)
+                self.matplotlib_widget.rs2_list[n].set_active(self.matplotlib_widget.flagselection_active)
 
-        if self.matplotlib_widget.selection_active:
-            print("Rectangle selection mode active. Select a rectangle on the plot.")
+        if self.matplotlib_widget.flagselection_active:
+            print("Rectangle flag selection mode active. Select a rectangle on the plot.")
         else:
-            print("Rectangle selection mode deactivated.")
+            print("Rectangle flag selection mode deactivated.")
 
+
+
+    def toggle_rectangle_unflagselection(self):
+        self.matplotlib_widget.unflagselection_active = not self.matplotlib_widget.unflagselection_active
+    
+        for n in range(len(self.matplotlib_widget.rs_flag)):
+            if self.matplotlib_widget.rs_unflag is not None:
+                print("setting active!")
+                self.matplotlib_widget.rs_unflag[n].set_active(self.matplotlib_widget.unflagselection_active)
+        
+
+        if self.matplotlib_widget.unflagselection_active:
+            print("Rectangle unflag selection mode active. Select a rectangle on the plot.")
+        else:
+            print("Rectangle unflag selection mode deactivated.")
+            
+            
+            
     def update_matplotlib_widget(self, selected_points):
         # Call the update_plot method in MatplotlibWidget
         self.matplotlib_widget.update_plot(selected_points)
