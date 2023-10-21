@@ -363,16 +363,29 @@ class ButtonWidget(QWidget):
         self.button1 = QPushButton('Flag data', self)
         self.button2 = QPushButton('Unflag data', self)
 
-        # Arrange the buttons in a horizontal layout
-        layout = QHBoxLayout()
-        
         self.checkbox_stationflag  = QCheckBox("Station Flag", self)
         self.checkbox_baselineflag = QCheckBox("Baseline Flag", self)
 
-        layout.addWidget(self.button1)
-        layout.addWidget(self.button2)
-        layout.addWidget(self.checkbox_stationflag)
-        layout.addWidget(self.checkbox_baselineflag)
+
+
+        # Create a QHBoxLayout for checkboxes to be aligned horizontally
+        checkbox_layout = QHBoxLayout()
+        checkbox_layout.addWidget(self.checkbox_stationflag)
+        checkbox_layout.addWidget(self.checkbox_baselineflag)
+
+
+        # Create a QHBoxLayout for buttons to be aligned horizontally
+        button_layout = QHBoxLayout()
+        button_layout.addWidget(self.button1)
+        button_layout.addWidget(self.button2)
+
+        # Create a QVBoxLayout to stack checkboxes and buttons vertically
+        main_layout = QVBoxLayout()
+        main_layout.addLayout(checkbox_layout)
+        main_layout.addLayout(button_layout)
+
+        self.setLayout(main_layout)
+        
         
 
         self.setLayout(layout)
